@@ -1,0 +1,94 @@
+---
+title: "Practical Machine Learning Course Project"
+output: html_document
+---
+
+## Synopsis
+Using personal activity data collected from accelerometers on the belt, forearm, arm, and dumbell of 6 participants, a model (machine learning algorithm) is built to predict the manner in which participants perform dumbell lifts. The data used in this project is obtained from this source: http://groupware.les.inf.puc-rio.br/har. The model is developed from a training data set and a cross validation data set with 3927 and 3141 entries, respectively. The predicted outcome is activity quality (Class A-E) and the predictors are activity monitors data. The "Random Forest" method is chosen and the expected out of sample error is 2.57%. The out of sample error for the cross validation data set is 2.23%, which is similar to the expected error rate. The model is then applied to predict the outcome for 20 test cases. 
+
+## Reading and Processing Data
+### Read training and testing data
+The following R code is used to download and read the training and testing data set. There are 19622 entries in the training data set and 20 entries in the testing data set. Both data set has 160 columns. 
+```{r, echo=TRUE}
+file1 <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+download.file(file1, destfile = "pml-training.csv", mode = "wb")
+pmltrain <- read.csv("pml-training.csv",na.strings=c("NA",""))
+file2 <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(file2, destfile = "pml-testing.csv", mode = "wb")
+pmltest <- read.csv("pml-testing.csv",na.strings=c("NA",""))
+dim(pmltrain); dim(pmltest)
+```
+### Tidy the data set
+Columns 1-7 are removed from the training and testing data set as they are not the predictors (data from the activity monitors) or outcome ("classe").There are a lot of missing values in the training and testing data set. To tidy up the data, the columns contain more than 95% of rows with missing values are removed. Both data set now contains 53 columns. The column names for both data set (after removing missing values columns) are the same, except the last column where it is the outcome "classe" for the training data and "problem_id" for the testing data.        
+```{r, echo=TRUE}
+## Remove columns 1-7 as they are not predictors or outcome
+pmltrain <- pmltrain[ ,-c(1:7)]
+pmltest <- pmltest[ ,-c(1:7)]
+## Remove columns with more than 95% of rows with missing values
+pmltrain <- pmltrain[ ,colSums(is.na(pmltrain)) < 0.05*nrow(pmltrain)]
+pmltest <- pmltest[ ,colSums(is.na(pmltest)) < 0.05*nrow(pmltest)]
+dim(pmltrain); dim(pmltest)
+```
+### Create partition for training and cross validation data set
+The "caret" package is loaded and the training data set is divided by "classe" into training and cross validation set. In my first attempt, I divided the training data into training and cross validation set in 60:40 ratio. The training set has 11776 entries and validation set has 7846 entries. However, when I used the training set with 11776 entries to build my model, it took a very long time to run. Fellow students on the course discussion forum suggested that good prediction model can be achieved using a much smaller training set (e.g. 1000 entries) and I have now  adjusted my training and cross validation data set accordingly.
+In this revised method, the train set is 20% of the download training data set. The cross validate set is 20% from the remaining training data set, i.e. those not chosen for the train set. Using this method, the training set has 3927 entries and validation set has 3141 entries.
+
+```{r, echo=TRUE}
+## Load "caret" package
+library(caret)
+## Create train set - 20% from the downloaded training set
+set.seed(123)
+inTrain <-createDataPartition(pmltrain$classe,p=0.2,list=FALSE)
+train <- pmltrain[inTrain, ]
+dim(train)
+## Create validate set - 20% from the remaining training set
+nottrain <- pmltrain[-inTrain, ]
+set.seed(123)
+inValidate <-createDataPartition(nottrain$classe,p=0.2,list=FALSE)
+validate <- nottrain[inValidate, ]
+dim(validate)
+```
+
+## Building the model
+The "Random Forest" model is chosen in this case as it is a tree-based model capbale of achieving good accuracy for predicting categorical outcome. The outcome is varibale "classe" which shows the activity quality and it can be A,B,C,D or E. The rest of the variables are predictors as they are the data collected from the activity monitors. The model information is shown below. The OOB (out-of-bag) estimate of error rate is 2.57%. 
+
+```{r,echo=TRUE}
+## randomForest model
+set.seed(123)
+library(randomForest)
+model1 <- randomForest(classe~., data=train, 
+                       importance=TRUE, proximity=TRUE)
+variableimportance <- importance(model1)
+print(model1)
+```
+
+The model is applied to the cross validation data set. Based on the activty monitors data in the cross validation data set, the activity quality "Class" is predicted. The predicted outcome Class is compared with the actual outcome in the cross validation data set. The predicted outcome has an accuracy of 0.9777 (i.e. out-of-sample-error = 1-0.9777 = 2.23%, which is similar to 2.57% estimated error rate from the model internally) 
+
+```{r,echo=TRUE}
+## model applied to cross validation data set
+set.seed(123)
+predict1 <- predict(model1,newdata=validate)
+acc1 <- confusionMatrix(validate$classe, predict1)
+acc1
+```
+
+## Applying the model to the testing data set
+The model (machine learning algorithm) is applied to the testing data set and the predicted outcome is displayed below.
+```{r,echo=TRUE}
+## Apply model to testing data set
+set.seed(123)
+predicttest <- predict(model1,newdata=pmltest)
+predicttest
+```
+The predicted outcome is written to text file using the R code below.
+```{r,echo=TRUE}
+answers <- as.character(predicttest)
+pml_write_files = function(x){
+        n = length(x)
+        for(i in 1:n){
+                filename = paste0("problem_id_",i,".txt")
+                write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+        }
+}
+pml_write_files(answers)
+```
